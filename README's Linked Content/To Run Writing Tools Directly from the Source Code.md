@@ -25,10 +25,14 @@ Of course, you'll need to have [Python installed](https://www.python.org/downloa
 - **Windows:**
    ```bash
    python main.py
+   # Tip: If you want Writing Tools to remain running even after you close your Terminal window, run `pythonw main.py` instead of `python main.py`.
+
    ```
+
 - **Linux:**
    ```bash
    python3 main.py
    ```
+
 
 ### [**◀️ Back to main page**](https://github.com/theJayTea/WritingTools)
