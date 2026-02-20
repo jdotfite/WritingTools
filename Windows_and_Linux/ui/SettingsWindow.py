@@ -29,6 +29,7 @@ class SettingsWindow(QtWidgets.QWidget):
         self.provider_container = None
         self.autostart_checkbox = None
         self.shortcut_input = None
+        self.autocorrect_shortcut_input = None
         self.init_ui()
         self.retranslate_ui()
 
@@ -234,6 +235,21 @@ class SettingsWindow(QtWidgets.QWidget):
             """)
             content_layout.addWidget(self.shortcut_input)
 
+            # Add auto-correct shortcut key input
+            ac_shortcut_label = QtWidgets.QLabel(_("Auto-Correct Toggle Shortcut:"))
+            ac_shortcut_label.setStyleSheet(f"font-size: 16px; color: {'#ffffff' if colorMode == 'dark' else '#333333'};")
+            content_layout.addWidget(ac_shortcut_label)
+
+            self.autocorrect_shortcut_input = QtWidgets.QLineEdit(self.app.config.get('autocorrect_shortcut', 'ctrl+shift+a'))
+            self.autocorrect_shortcut_input.setStyleSheet(f"""
+                font-size: 16px;
+                padding: 5px;
+                background-color: {'#444' if colorMode == 'dark' else 'white'};
+                color: {'#ffffff' if colorMode == 'dark' else '#000000'};
+                border: 1px solid {'#666' if colorMode == 'dark' else '#ccc'};
+            """)
+            content_layout.addWidget(self.autocorrect_shortcut_input)
+
             # Add theme selection
             theme_label = QtWidgets.QLabel(_("Background Theme:"))
             theme_label.setStyleSheet(f"font-size: 16px; color: {'#ffffff' if colorMode == 'dark' else '#333333'};")
@@ -355,6 +371,7 @@ class SettingsWindow(QtWidgets.QWidget):
 
         if not self.providers_only:
             self.app.config['shortcut'] = self.shortcut_input.text()
+            self.app.config['autocorrect_shortcut'] = self.autocorrect_shortcut_input.text()
             self.app.config['theme'] = 'gradient' if self.gradient_radio.isChecked() else 'plain'
         else:
             self.app.create_tray_icon()

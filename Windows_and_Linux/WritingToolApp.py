@@ -15,6 +15,7 @@ import ui.OnboardingWindow
 import ui.ResponseWindow
 import ui.SettingsWindow
 from aiprovider import GeminiProvider, OllamaProvider, OpenAICompatibleProvider, obfuscate_api_key
+from AutoCorrectMode import AutoCorrectMode
 from pynput import keyboard as pykeyboard
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import QLocale, Signal, Slot
@@ -33,6 +34,7 @@ class WritingToolApp(QtWidgets.QApplication):
     show_message_signal = Signal(str, str)  # a signal for showing message boxes
     hotkey_triggered_signal = Signal()
     followup_response_signal = Signal(str)
+    autocorrect_toggled_signal = Signal(bool)  # emits True/False for ON/OFF
 
 
     def __init__(self, argv):
@@ -42,6 +44,9 @@ class WritingToolApp(QtWidgets.QApplication):
         self.output_ready_signal.connect(self.replace_text)
         self.show_message_signal.connect(self.show_message_box)
         self.hotkey_triggered_signal.connect(self.on_hotkey_pressed)
+        self.autocorrect_toggled_signal.connect(self.on_autocorrect_toggled)
+        self.auto_correct = AutoCorrectMode(self)
+        self.autocorrect_action = None
         self.config = None
         self.config_path = None
         self.load_config()
@@ -273,6 +278,12 @@ class WritingToolApp(QtWidgets.QApplication):
         # Parse the shortcut string, for example ctrl+alt+h -> <ctrl>+<alt>+h
         shortcut = '+'.join([f'{t}' if len(t) <= 1 else f'<{t}>' for t in orig_shortcut.split('+')])
         logging.debug(f'Registering global hotkey for shortcut: {shortcut}')
+
+        # Parse the auto-correct shortcut
+        orig_ac_shortcut = self.config.get('autocorrect_shortcut', 'ctrl+shift+a')
+        ac_shortcut = '+'.join([f'{t}' if len(t) <= 1 else f'<{t}>' for t in orig_ac_shortcut.split('+')])
+        logging.debug(f'Registering auto-correct hotkey for shortcut: {ac_shortcut}')
+
         try:
             if self.hotkey_listener is not None:
                 self.hotkey_listener.stop()
@@ -283,21 +294,37 @@ class WritingToolApp(QtWidgets.QApplication):
                 logging.debug('triggered hotkey')
                 self.hotkey_triggered_signal.emit()  # Emit the signal when hotkey is pressed
 
-            # Define the hotkey combination
+            def on_activate_autocorrect():
+                logging.debug('triggered auto-correct hotkey')
+                self.auto_correct.toggle()
+
+            # Define the hotkey combinations
             hotkey = pykeyboard.HotKey(
                 pykeyboard.HotKey.parse(shortcut),
                 on_activate
             )
+            autocorrect_hotkey = pykeyboard.HotKey(
+                pykeyboard.HotKey.parse(ac_shortcut),
+                on_activate_autocorrect
+            )
             self.registered_hotkey = orig_shortcut
 
-            # Helper function to standardize key event
-            def for_canonical(f):
-                return lambda k: f(self.hotkey_listener.canonical(k))
+            # Create combined on_press/on_release that feeds both hotkeys and auto-correct
+            def on_press(key):
+                canonical_key = self.hotkey_listener.canonical(key)
+                hotkey.press(canonical_key)
+                autocorrect_hotkey.press(canonical_key)
+                self.auto_correct.on_key_press(key)  # raw key for buffer
+
+            def on_release(key):
+                canonical_key = self.hotkey_listener.canonical(key)
+                hotkey.release(canonical_key)
+                autocorrect_hotkey.release(canonical_key)
 
             # Create a listener and store it as an attribute to stop it later
             self.hotkey_listener = pykeyboard.Listener(
-                on_press=for_canonical(hotkey.press),
-                on_release=for_canonical(hotkey.release)
+                on_press=on_press,
+                on_release=on_release
             )
 
             # Start the listener
@@ -647,7 +674,12 @@ class WritingToolApp(QtWidgets.QApplication):
         settings_action = self.tray_menu.addAction(self._('Settings'))
         settings_action.triggered.connect(self.show_settings)
 
-        # Pause/Resume toggle action 
+        # Auto-Correct toggle action
+        ac_label = self._('Auto-Correct: ON') if self.auto_correct.enabled else self._('Auto-Correct: OFF')
+        self.autocorrect_action = self.tray_menu.addAction(ac_label)
+        self.autocorrect_action.triggered.connect(self.auto_correct.toggle)
+
+        # Pause/Resume toggle action
         self.toggle_action = self.tray_menu.addAction(self._('Resume') if self.paused else self._('Pause'))
         self.toggle_action.triggered.connect(self.toggle_paused)
 
@@ -665,6 +697,21 @@ class WritingToolApp(QtWidgets.QApplication):
         self.paused = not self.paused
         self.toggle_action.setText(self._('Resume') if self.paused else self._('Pause'))
         logging.debug('App is paused' if self.paused else 'App is resumed')
+
+    @Slot(bool)
+    def on_autocorrect_toggled(self, enabled):
+        """Handle auto-correct mode toggle — update tray menu and show notification."""
+        if self.autocorrect_action:
+            self.autocorrect_action.setText(
+                self._('Auto-Correct: ON') if enabled else self._('Auto-Correct: OFF')
+            )
+        if self.tray_icon:
+            self.tray_icon.showMessage(
+                'Writing Tools',
+                self._('Auto-Correct ON') if enabled else self._('Auto-Correct OFF'),
+                QtWidgets.QSystemTrayIcon.MessageIcon.Information,
+                2000
+            )
 
     @staticmethod
     def apply_dark_mode_styles(menu):
